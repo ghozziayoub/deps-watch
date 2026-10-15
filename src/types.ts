@@ -6,7 +6,9 @@ export type Feasibility =
 
 export type DepKind = 'dependency' | 'devDependency' | 'transitive'
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'none'
-export type FixRunner = 'npm' | 'ng'
+export type PackageManagerId = 'npm' | 'yarn' | 'pnpm' | 'bun'
+
+export type FixRunner = PackageManagerId | 'ng'
 
 export interface AdvisoryInfo {
   id: string
@@ -94,8 +96,11 @@ export interface ProjectSummary {
   transitiveCount: number
   counts: Record<Feasibility, number>
   verifyLabel?: string | null
+  packageManager?: PackageManagerId | null
   migrationGuide?: MigrationGuide | null
   error?: string
+  errorCode?: string | null
+  errorHint?: string | null
 }
 
 export interface ScanReport {

@@ -1,9 +1,11 @@
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { loadLockGraph, type LockGraph } from './lockfile.ts'
+import { detectPackageManager } from './packageManager.ts'
+import { assertProjectHealthy } from './projectHealth.ts'
 import { listProjectConfigs } from './projectsStore.ts'
 import { getAppRoot } from './paths.ts'
-import type { DepKind, ProjectConfig } from './types.ts'
+import type { DepKind, PackageManagerId, ProjectConfig } from './types.ts'
 
 export { getAppRoot }
 
@@ -20,19 +22,15 @@ export interface DeclaredDep {
 export interface ProjectManifest {
   declared: DeclaredDep[]
   graph: LockGraph
-}
-
-function readJson(filePath: string): unknown {
-  return JSON.parse(readFileSync(filePath, 'utf8'))
+  packageManager: PackageManagerId
 }
 
 export function loadProjectManifest(projectPath: string): ProjectManifest {
-  const pkgPath = path.join(projectPath, 'package.json')
-  if (!existsSync(pkgPath)) {
-    throw new Error(`package.json not found in ${projectPath}`)
-  }
+  assertProjectHealthy(projectPath)
+  const packageManager = detectPackageManager(projectPath)
 
-  const pkg = readJson(pkgPath) as {
+  const pkgPath = path.join(projectPath, 'package.json')
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as {
     dependencies?: Record<string, string>
     devDependencies?: Record<string, string>
   }
@@ -45,6 +43,6 @@ export function loadProjectManifest(projectPath: string): ProjectManifest {
     declared.push({ name, range, kind: 'devDependency' })
   }
 
-  const graph = loadLockGraph(projectPath, declared)
-  return { declared, graph }
+  const graph = loadLockGraph(projectPath, declared, packageManager)
+  return { declared, graph, packageManager }
 }

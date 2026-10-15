@@ -22,6 +22,11 @@ import {
   removeProject,
 } from './server/projectsStore.ts'
 import { detectFramework } from './server/framework.ts'
+import {
+  detectPackageManager,
+  packageManagerLabel,
+} from './server/packageManager.ts'
+import { inspectProjectHealth } from './server/projectHealth.ts'
 import { detectVerifyCommand } from './server/verify.ts'
 import type { FixJobRequest } from './server/types.ts'
 
@@ -36,13 +41,21 @@ function refreshProjectReportIgnores(projectId: string) {
 function projectListPayload() {
   return listProjectConfigs().map((p) => {
     const framework = detectFramework(p.path)
+    const health = inspectProjectHealth(p.path)
+    const packageManager = health.packageManager || detectPackageManager(p.path)
     return {
       id: p.id,
       name: p.name,
       path: p.path,
-      verifyLabel: detectVerifyCommand(p)?.label ?? null,
+      verifyLabel: detectVerifyCommand(p, packageManager)?.label ?? null,
       framework: framework.label,
       frameworkId: framework.id,
+      packageManager,
+      packageManagerLabel: packageManagerLabel(packageManager),
+      healthOk: health.ok,
+      healthCode: health.code,
+      healthMessage: health.message,
+      healthHint: health.hint,
     }
   })
 }
@@ -73,17 +86,15 @@ function depsWatchApi(): Plugin {
               return json(res, 400, { error: 'path required' })
             }
             const project = addProjectFromFolder(body.path.trim())
-            const framework = detectFramework(project.path)
+            const projects = projectListPayload()
+            const full = projects.find((p) => p.id === project.id)
             return json(res, 200, {
-              project: {
+              project: full ?? {
                 id: project.id,
                 name: project.name,
                 path: project.path,
-                verifyLabel: detectVerifyCommand(project)?.label ?? null,
-                framework: framework.label,
-                frameworkId: framework.id,
               },
-              projects: projectListPayload(),
+              projects,
             })
           }
 

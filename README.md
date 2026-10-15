@@ -74,6 +74,8 @@ npm run preview
 | Area | What you get |
 | --- | --- |
 | **Projects** | Add / remove apps (pick a folder’s `package.json`); per-project tabs |
+| **Package managers** | Detects **npm / Yarn / pnpm / Bun** from lockfile or `packageManager` field (default **npm**); scan, shown commands, **Run here**, and verify use that manager |
+| **Health checks** | Clear empty/error UI for missing or broken `package.json` / lockfile for the detected manager |
 | **Scan** | Registry outdated checks + [OSV](https://osv.dev) advisories |
 | **Graph** | Direct + transitive deps; production vs all scopes |
 | **Priority** | Severity, feasibility (`update now` / `plan major` / `no fix yet`), ignore & snooze |
@@ -171,7 +173,7 @@ Full guide: **[CONTRIBUTING.md](./CONTRIBUTING.md)** (branching, commit names, v
 Deps Watch is an early alpha. Useful contributions:
 
 1. Bug reports and clear repro steps
-2. Support for **yarn** / **pnpm** lockfiles (Beta priority)
+2. Deeper **yarn** / **pnpm** graph fidelity and workspaces (Beta)
 3. UX fixes and accessibility
 4. **Quality tooling** — lint, format, unit/e2e tests, CI (welcome in Alpha)
 5. Docs for stacks you use daily (Nest, Vue, …)

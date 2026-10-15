@@ -15,7 +15,7 @@ Local, no-SaaS multi-project dependency dashboard for Node/JS/TS apps that ship 
 
 ## Alpha — PoC (current)
 
-**Intent:** Works well for local multi-app setups and similar npm projects. Angular gets extra help; other stacks can already scan and npm-fix.
+**Intent:** Works well for local multi-app setups. Detects npm / Yarn / pnpm / Bun. Angular gets extra help (`ng update`).
 
 ### Done (baseline)
 
@@ -25,6 +25,7 @@ Local, no-SaaS multi-project dependency dashboard for Node/JS/TS apps that ship 
 - [x] Direct + transitive findings, production filter, ignore / snooze
 - [x] Priority sorting, severity, Angular grouping + `ng update` actions
 - [x] Framework detection from `package.json` + UI pills
+- [x] Package manager detection (npm / Yarn / pnpm / Bun) + manager-aware scan / fix / verify commands
 - [x] Official JS/TS upgrade / migration guides when latest major > current (Angular Update Guide, Next, Nuxt, Nest, Vue, …)
 - [x] In-app fix runner with progress log
 - [x] Optional verify-after-fix (`verifyScript` or auto-detected scripts)
@@ -35,7 +36,7 @@ Local, no-SaaS multi-project dependency dashboard for Node/JS/TS apps that ship 
 ### Alpha polish (optional before beta)
 
 - [x] Document install, features, contributing ([README.md](./README.md), [CONTRIBUTING.md](./CONTRIBUTING.md))
-- [ ] Empty / error states for missing lockfile or broken `package.json`
+- [x] Empty / error states for missing lockfile or broken `package.json`
 - [ ] Persist last-selected project across reload
 
 ### Alpha engineering (welcome anytime — not blocked on Beta)
@@ -54,13 +55,14 @@ Once added, these join the verify rules in [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Beta — MVP
 
-**Intent:** Daily driver for any local JS/TS project with `package.json` + lockfile. Less Angular-centric; safer fixes; clearer package-manager support.
+**Intent:** Daily driver for any local JS/TS project with `package.json` + lockfile. Less Angular-centric; safer fixes; richer package-manager / workspace support.
 
 ### Package managers & projects
 
-- [ ] Detect package manager: **npm / yarn / pnpm** (lockfile + `packageManager` field)
-- [ ] Run installs/updates with the correct CLI (`npm` / `yarn` / `pnpm`)
-- [ ] Read yarn.lock / pnpm-lock.yaml graphs (not only package-lock)
+- [x] Detect package manager: **npm / yarn / pnpm / bun** (lockfile + `packageManager` field) — Alpha
+- [x] Run installs/updates with the correct CLI — Alpha
+- [x] Read yarn.lock / pnpm-lock.yaml graphs (best-effort) — Alpha
+- [ ] Deeper yarn/pnpm graph fidelity (peer links, workspaces)
 - [ ] Verify-script presets by stack (e.g. `typecheck`, `test`, `build`, Nest `test`, Vite `build`)
 - [ ] Edit project name + verify script from the UI
 - [ ] Batch “scan all projects” without bringing back an “All” findings mix-up (queue + per-project progress)

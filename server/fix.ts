@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { assertGitReadyForFix } from './gitSafety.ts'
 import { loadProjectConfigs } from './loadProjects.ts'
+import { detectPackageManager } from './packageManager.ts'
 import { loadProjectReport } from './scan.ts'
 import { detectVerifyCommand } from './verify.ts'
 import type {
@@ -10,6 +11,7 @@ import type {
   FixJobRequest,
   FixRunner,
   PackageFinding,
+  PackageManagerId,
 } from './types.ts'
 
 const jobs = new Map<string, FixJob>()
@@ -17,8 +19,8 @@ let activeJobId: string | null = null
 
 const PKG_RE = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/i
 const VER_RE = /^(latest|[\w.+-]+)$/
-/** Dirty trees are blocked by gitSafety — do not allow --allow-dirty. */
 const NG_FLAGS = new Set(['--force', '--create-commits'])
+const PM_RUNNERS = new Set<PackageManagerId>(['npm', 'yarn', 'pnpm', 'bun'])
 
 export function getFixJob(id: string): FixJob | null {
   return jobs.get(id) ?? null
@@ -44,20 +46,25 @@ function splitInstallTarget(arg: string): { name: string; version: string } {
   return { name: arg.slice(0, cut), version: arg.slice(cut + 1) }
 }
 
+function assertPackageSpec(arg: string): void {
+  const { name, version } = splitInstallTarget(arg)
+  if (!PKG_RE.test(name) || !VER_RE.test(version)) {
+    throw new Error(`Invalid package target: ${arg}`)
+  }
+}
+
 function assertNpmArgs(args: string[]): void {
   if (args.length < 2) throw new Error('Invalid npm fix command')
   const cmd = args[0]
   if (cmd !== 'install' && cmd !== 'update' && cmd !== 'run') {
     throw new Error(`Unsupported npm command: ${cmd}`)
   }
-
   if (cmd === 'run') {
     if (args.length < 2 || !/^[\w.:-]+$/.test(args[1]!)) {
       throw new Error('Invalid npm run script')
     }
     return
   }
-
   for (const arg of args) {
     if (arg.startsWith('-')) {
       if (!['--save', '--save-dev', '-D', '-P'].includes(arg)) {
@@ -66,22 +73,94 @@ function assertNpmArgs(args: string[]): void {
       continue
     }
     if (arg === 'install' || arg === 'update') continue
-
     if (cmd === 'update') {
       if (!PKG_RE.test(arg)) throw new Error(`Invalid package name: ${arg}`)
       continue
     }
-
-    const { name, version } = splitInstallTarget(arg)
-    if (!PKG_RE.test(name) || !VER_RE.test(version)) {
-      throw new Error(`Invalid package target: ${arg}`)
-    }
+    assertPackageSpec(arg)
   }
+}
+
+function assertYarnArgs(args: string[]): void {
+  const cmd = args[0]
+  if (cmd === 'run') {
+    if (args.length < 2 || !/^[\w.:-]+$/.test(args[1]!)) {
+      throw new Error('Invalid yarn run script')
+    }
+    return
+  }
+  if (cmd === 'add') {
+    for (const arg of args.slice(1)) {
+      if (arg === '-D' || arg === '--dev') continue
+      if (arg.startsWith('-')) throw new Error(`Unsupported yarn flag: ${arg}`)
+      assertPackageSpec(arg)
+    }
+    return
+  }
+  if (cmd === 'upgrade' || cmd === 'up') {
+    for (const arg of args.slice(1)) {
+      if (arg.startsWith('-')) throw new Error(`Unsupported yarn flag: ${arg}`)
+      if (!PKG_RE.test(arg)) throw new Error(`Invalid package name: ${arg}`)
+    }
+    return
+  }
+  throw new Error(`Unsupported yarn command: ${cmd ?? '(empty)'}`)
+}
+
+function assertPnpmArgs(args: string[]): void {
+  const cmd = args[0]
+  if (cmd === 'run') {
+    if (args.length < 2 || !/^[\w.:-]+$/.test(args[1]!)) {
+      throw new Error('Invalid pnpm run script')
+    }
+    return
+  }
+  if (cmd === 'add') {
+    for (const arg of args.slice(1)) {
+      if (arg === '-D' || arg === '--save-dev') continue
+      if (arg.startsWith('-')) throw new Error(`Unsupported pnpm flag: ${arg}`)
+      assertPackageSpec(arg)
+    }
+    return
+  }
+  if (cmd === 'update') {
+    for (const arg of args.slice(1)) {
+      if (arg.startsWith('-')) throw new Error(`Unsupported pnpm flag: ${arg}`)
+      if (!PKG_RE.test(arg)) throw new Error(`Invalid package name: ${arg}`)
+    }
+    return
+  }
+  throw new Error(`Unsupported pnpm command: ${cmd ?? '(empty)'}`)
+}
+
+function assertBunArgs(args: string[]): void {
+  const cmd = args[0]
+  if (cmd === 'run') {
+    if (args.length < 2 || !/^[\w.:-]+$/.test(args[1]!)) {
+      throw new Error('Invalid bun run script')
+    }
+    return
+  }
+  if (cmd === 'add') {
+    for (const arg of args.slice(1)) {
+      if (arg === '-d' || arg === '--dev') continue
+      if (arg.startsWith('-')) throw new Error(`Unsupported bun flag: ${arg}`)
+      assertPackageSpec(arg)
+    }
+    return
+  }
+  if (cmd === 'update') {
+    for (const arg of args.slice(1)) {
+      if (arg.startsWith('-')) throw new Error(`Unsupported bun flag: ${arg}`)
+      if (!PKG_RE.test(arg)) throw new Error(`Invalid package name: ${arg}`)
+    }
+    return
+  }
+  throw new Error(`Unsupported bun command: ${cmd ?? '(empty)'}`)
 }
 
 function assertNgArgs(args: string[]): void {
   if (args[0] !== 'update' && args[0] !== 'build') {
-    // allow ng build for verify
     if (args[0] === 'build') return
     throw new Error(`Unsupported ng command: ${args[0] ?? '(empty)'}`)
   }
@@ -109,13 +188,25 @@ function assertNgArgs(args: string[]): void {
 }
 
 function resolveRunner(action: FixAction): FixRunner {
-  return action.runner ?? (action.command.startsWith('ng ') ? 'ng' : 'npm')
+  if (action.runner) return action.runner
+  if (action.command.startsWith('ng ')) return 'ng'
+  if (action.command.startsWith('yarn ')) return 'yarn'
+  if (action.command.startsWith('pnpm ')) return 'pnpm'
+  if (action.command.startsWith('bun ')) return 'bun'
+  return 'npm'
 }
 
 function assertSafeAction(action: FixAction): FixRunner {
   const runner = resolveRunner(action)
   if (runner === 'ng') assertNgArgs(action.args)
+  else if (runner === 'yarn') assertYarnArgs(action.args)
+  else if (runner === 'pnpm') assertPnpmArgs(action.args)
+  else if (runner === 'bun') assertBunArgs(action.args)
   else assertNpmArgs(action.args)
+  return runner
+}
+
+function spawnBin(runner: FixRunner): string {
   return runner
 }
 
@@ -154,7 +245,17 @@ export async function startFixJob(request: FixJobRequest): Promise<FixJob> {
   if (!action) throw new Error(`Unknown fix action: ${request.actionId}`)
 
   const runner = assertSafeAction(action)
-  const verifyCmd = detectVerifyCommand(project)
+  if (runner !== 'ng' && PM_RUNNERS.has(runner)) {
+    const expected = detectPackageManager(project.path)
+    if (runner !== expected) {
+      throw new Error(
+        `Fix uses ${runner} but this project is configured for ${expected}. Re-scan and try again.`,
+      )
+    }
+  }
+
+  const packageManager = detectPackageManager(project.path)
+  const verifyCmd = detectVerifyCommand(project, packageManager)
   const verifyRequested = Boolean(request.verify && verifyCmd)
 
   const job: FixJob = {
@@ -229,7 +330,7 @@ async function runJob(
 
   try {
     const exitCode = await runSpawn(
-      job.runner === 'ng' ? 'ng' : 'npm',
+      spawnBin(job.runner),
       job.args,
       job.projectPath,
       (line) => appendLog(job, line),
@@ -252,7 +353,7 @@ async function runJob(
       appendLog(job, '')
       appendLog(job, `--- Verify: ${verifyCmd.label} ---`)
       const verifyCode = await runSpawn(
-        verifyCmd.runner === 'ng' ? 'ng' : 'npm',
+        spawnBin(verifyCmd.runner),
         verifyCmd.args,
         job.projectPath,
         (line) => appendLog(job, line),

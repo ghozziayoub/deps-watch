@@ -5,6 +5,7 @@ import {
   isAngularScopedPackage,
   shouldUseNgUpdate,
 } from './angular.ts'
+import { pmInstall, pmUpdate } from './packageManager.ts'
 import { applyPriority } from './priority.ts'
 import type {
   AdvisoryInfo,
@@ -12,6 +13,7 @@ import type {
   Feasibility,
   FixAction,
   PackageFinding,
+  PackageManagerId,
   ParentEdge,
   RootPath,
 } from './types.ts'
@@ -38,10 +40,6 @@ function pickBestFix(
   return pool[0] ?? null
 }
 
-function npmCommand(args: string[]): string {
-  return ['npm', ...args].join(' ')
-}
-
 function buildFixActions(input: {
   name: string
   kind: DepKind
@@ -54,13 +52,17 @@ function buildFixActions(input: {
   feasibility: Feasibility
   rootPaths: RootPath[]
   parents: ParentEdge[]
+  packageManager: PackageManagerId
+  projectPath: string
 }): FixAction[] {
   const actions: FixAction[] = []
+  const pm = input.packageManager
+  const projectPath = input.projectPath
   if (input.feasibility === 'ok' || input.feasibility === 'vuln_no_fix') {
     return actions
   }
 
-  // Angular packages themselves: never solo-npm — use ng update
+  // Angular packages themselves: never solo-install — use ng update
   if (shouldUseNgUpdate(input.name)) {
     return buildAngularFixActions({
       name: input.name,
@@ -74,8 +76,7 @@ function buildFixActions(input: {
     })
   }
 
-  const saveFlag =
-    input.kind === 'devDependency' ? '--save-dev' : '--save'
+  const isDev = input.kind === 'devDependency'
 
   if (input.isDirect) {
     const securityTarget = input.bestFix
@@ -97,7 +98,7 @@ function buildFixActions(input: {
             : input.latest)
 
     if (securityTarget && input.fixAvailable) {
-      const args = ['install', `${input.name}@${securityTarget}`, saveFlag]
+      const cmd = pmInstall(pm, projectPath, `${input.name}@${securityTarget}`, isDev)
       actions.push({
         id: 'direct-security',
         label: securityIsMajor
@@ -106,16 +107,16 @@ function buildFixActions(input: {
         explanation: securityIsMajor
           ? `Security fix for ${input.name} requires a major upgrade (${input.current} → ${securityTarget}). Review breaking changes.`
           : `Updates direct dependency ${input.name} to the fixed version.`,
-        runner: 'npm',
-        args,
-        command: npmCommand(args),
+        runner: cmd.runner,
+        args: cmd.args,
+        command: cmd.command,
         targetPackage: input.name,
         targetVersion: securityTarget,
       })
     }
 
     if (updateTarget && updateTarget !== securityTarget) {
-      const args = ['install', `${input.name}@${updateTarget}`, saveFlag]
+      const cmd = pmInstall(pm, projectPath, `${input.name}@${updateTarget}`, isDev)
       const peerHint = peerMajorCaution(input.name)
       actions.push({
         id: 'direct-update',
@@ -127,9 +128,9 @@ function buildFixActions(input: {
           input.feasibility === 'plan_major'
             ? `Major bump of direct dependency ${input.name}. Review breaking changes first.${peerHint}`
             : `Updates direct dependency ${input.name} within / to the selected target.`,
-        runner: 'npm',
-        args,
-        command: npmCommand(args),
+        runner: cmd.runner,
+        args: cmd.args,
+        command: cmd.command,
         targetPackage: input.name,
         targetVersion: updateTarget,
       })
@@ -154,14 +155,14 @@ function buildFixActions(input: {
       semver.satisfies(target!, root.immediateRange, { includePrerelease: true })
 
     if (target && rangeAllowsFix) {
-      const args = ['update', input.name]
+      const cmd = pmUpdate(pm, projectPath, input.name)
       actions.push({
         id: `via-root-update:${root.rootPackage}`,
-        label: `npm update ${input.name} (via ${root.rootPackage})`,
+        label: `${cmd.command} (via ${root.rootPackage})`,
         explanation: `Pulled in by ${root.chain.join(' → ')}. Parent range ${root.immediateRange} already allows ${target}, so updating the lockfile may fix it without changing package.json.`,
-        runner: 'npm',
-        args,
-        command: npmCommand(args),
+        runner: cmd.runner,
+        args: cmd.args,
+        command: cmd.command,
         targetPackage: input.name,
         targetVersion: target,
       })
@@ -170,52 +171,55 @@ function buildFixActions(input: {
   }
 
   for (const root of nonAngularRoots) {
-    const rootSave = root.rootKind === 'devDependency' ? '--save-dev' : '--save'
-    const args = ['install', `${root.rootPackage}@latest`, rootSave]
+    const cmd = pmInstall(
+      pm,
+      projectPath,
+      `${root.rootPackage}@latest`,
+      root.rootKind === 'devDependency',
+    )
     actions.push({
       id: `bump-root:${root.rootPackage}`,
       label: `Bump root ${root.rootPackage}@latest`,
       explanation: `${input.name} comes from ${root.chain.join(' → ')}. Updating the root package may pull a fixed/newer transitive version (not guaranteed — re-scan after).`,
-      runner: 'npm',
-      args,
-      command: npmCommand(args),
+      runner: cmd.runner,
+      args: cmd.args,
+      command: cmd.command,
       targetPackage: root.rootPackage,
       targetVersion: 'latest',
     })
   }
 
   if (onlyAngularParents) {
-    // Prefer framework/CLI group over pinning tooling transitives into package.json
     if (actions.length > 0) {
       const first = actions[0]!
       first.explanation = `${first.explanation} Prefer refreshing via the Angular framework group (ng update) when possible.`
     }
 
     if (target && !isAngularScopedPackage(input.name)) {
-      const args = ['install', `${input.name}@${target}`, '--save']
+      const cmd = pmInstall(pm, projectPath, `${input.name}@${target}`, false)
       actions.push({
         id: 'pin-transitive-last-resort',
         label: `Last resort: pin ${input.name}@${target}`,
         explanation: onlyAngularParents
           ? `${input.name} comes only through Angular tooling (${roots.map((r) => r.rootPackage).join(', ')}). Prefer the Angular framework group first; pin only if that does not refresh this package.`
           : 'Only if an Angular CLI/framework update does not refresh this package. Adds it as a direct dependency.',
-        runner: 'npm',
-        args,
-        command: npmCommand(args),
+        runner: cmd.runner,
+        args: cmd.args,
+        command: cmd.command,
         targetPackage: input.name,
         targetVersion: target,
       })
     }
   } else if (target && !isAngularScopedPackage(input.name)) {
-    const args = ['install', `${input.name}@${target}`, '--save']
+    const cmd = pmInstall(pm, projectPath, `${input.name}@${target}`, false)
     actions.push({
       id: 'pin-transitive',
       label: `Pin ${input.name}@${target} as direct dep`,
       explanation:
-        'Adds this package as a direct dependency so npm can hoist the fixed version. Use when root bumps do not help.',
-      runner: 'npm',
-      args,
-      command: npmCommand(args),
+        'Adds this package as a direct dependency so the package manager can hoist the fixed version. Use when root bumps do not help.',
+      runner: cmd.runner,
+      args: cmd.args,
+      command: cmd.command,
       targetPackage: input.name,
       targetVersion: target,
     })
@@ -255,6 +259,8 @@ export function classifyPackage(input: {
   advisories: AdvisoryInfo[]
   parents: ParentEdge[]
   rootPaths: RootPath[]
+  packageManager: PackageManagerId
+  projectPath: string
 }): PackageFinding {
   const { current, latest, advisories, versions } = input
   const hasVuln = advisories.length > 0
@@ -372,6 +378,8 @@ export function classifyPackage(input: {
     feasibility,
     rootPaths: input.rootPaths,
     parents: input.parents,
+    packageManager: input.packageManager,
+    projectPath: input.projectPath,
   })
 
   return applyPriority({

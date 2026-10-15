@@ -5,6 +5,7 @@ import type {
   FixJob,
   MigrationGuide,
   PackageFinding,
+  ProjectSummary,
   ScanReport,
   Severity,
 } from './types.ts'
@@ -16,6 +17,12 @@ type ProjectInfo = {
   verifyLabel: string | null
   framework?: string | null
   frameworkId?: string | null
+  packageManager?: string | null
+  packageManagerLabel?: string | null
+  healthOk?: boolean
+  healthCode?: string | null
+  healthMessage?: string | null
+  healthHint?: string | null
 }
 
 type GitSafetyStatus = {
@@ -354,6 +361,166 @@ function drawerMigrationGuideHtml(finding: PackageFinding): string {
     </div>`
 }
 
+function healthTitle(code: string | null | undefined): string {
+  switch (code) {
+    case 'missing_package_json':
+      return 'package.json missing'
+    case 'broken_package_json':
+      return 'Broken package.json'
+    case 'missing_lockfile':
+      return 'Lockfile missing'
+    case 'broken_lockfile':
+      return 'Broken lockfile'
+    default:
+      return 'Project can’t be scanned'
+  }
+}
+
+function installCommandFor(manager: string | null | undefined): string {
+  switch (manager) {
+    case 'yarn':
+      return 'yarn install'
+    case 'pnpm':
+      return 'pnpm install'
+    case 'bun':
+      return 'bun install'
+    default:
+      return 'npm install'
+  }
+}
+
+function projectProblemPanel(input: {
+  title: string
+  message: string
+  hint?: string | null
+  path?: string
+  code?: string | null
+  manager?: string | null
+}): string {
+  return `
+    <section class="state-panel state-error" role="alert">
+      <p class="eyebrow">Needs attention</p>
+      <h2>${escapeHtml(input.title)}</h2>
+      <p class="state-message">${escapeHtml(input.message)}</p>
+      ${
+        input.hint
+          ? `<p class="state-hint">${escapeHtml(input.hint)}</p>`
+          : ''
+      }
+      ${
+        input.path
+          ? `<p class="meta path-hint"><code>${escapeHtml(input.path)}</code></p>`
+          : ''
+      }
+      ${
+        input.code === 'missing_lockfile' || input.code === 'broken_lockfile'
+          ? `<pre class="state-cmd">${escapeHtml(installCommandFor(input.manager))}</pre>`
+          : ''
+      }
+    </section>`
+}
+
+function mainPanelHtml(
+  project: ProjectInfo | null,
+  report: ScanReport | null,
+  summary: ProjectSummary | undefined,
+  findings: PackageFinding[],
+  counts: ReturnType<typeof totals> | null,
+  ignoredCount: number,
+): string {
+  if (!project) {
+    return `
+      <section class="state-panel state-empty">
+        <p class="eyebrow">Get started</p>
+        <h2>Add a project</h2>
+        <p class="state-message">Choose a folder’s <code>package.json</code> to start scanning dependencies.</p>
+        <p class="state-hint">Uses the project’s package manager (npm, Yarn, pnpm, or Bun) from its lockfile or <code>packageManager</code> field — default npm.</p>
+      </section>`
+  }
+
+  const preHealthBad = project.healthOk === false
+  if (!report && preHealthBad) {
+    return projectProblemPanel({
+      title: healthTitle(project.healthCode),
+      message: project.healthMessage ?? 'This project is not ready to scan.',
+      hint: project.healthHint,
+      path: project.path,
+      code: project.healthCode,
+      manager: project.packageManager,
+    })
+  }
+
+  if (!report) {
+    return `
+      <section class="state-panel state-ready">
+        <p class="eyebrow">Ready</p>
+        <h2>Scan ${escapeHtml(project.name)}${
+          project.framework && project.framework !== 'Unknown'
+            ? ` <span class="framework-pill" data-framework="${escapeAttr(project.frameworkId ?? '')}">${escapeHtml(project.framework)}</span>`
+            : ''
+        }${
+          project.packageManagerLabel
+            ? ` <span class="framework-pill pm-pill">${escapeHtml(project.packageManagerLabel)}</span>`
+            : ''
+        }</h2>
+        <p class="state-message">Check outdated packages and known vulnerabilities for this project.</p>
+        <p class="meta path-hint"><code>${escapeHtml(project.path)}</code></p>
+      </section>`
+  }
+
+  if (summary?.error) {
+    return projectProblemPanel({
+      title: healthTitle(summary.errorCode),
+      message: summary.error,
+      hint: summary.errorHint,
+      path: project.path,
+      code: summary.errorCode,
+      manager: summary.packageManager ?? project.packageManager,
+    })
+  }
+
+  return `
+    ${migrationGuideBannerHtml(summary?.migrationGuide)}
+    ${
+      counts
+        ? `<div class="status-row" role="group" aria-label="Status">
+            <button type="button" class="status-pill ${state.filters.feasibility === 'actionable' ? 'active' : ''}" data-feasibility="actionable">Needs attention</button>
+            <button type="button" class="status-pill ${state.filters.feasibility === 'vuln_no_fix' ? 'active' : ''}" data-feasibility="vuln_no_fix">No fix yet <b>${counts.vuln_no_fix}</b></button>
+            <button type="button" class="status-pill ${state.filters.feasibility === 'update_now' ? 'active' : ''}" data-feasibility="update_now">Update now <b>${counts.update_now}</b></button>
+            <button type="button" class="status-pill ${state.filters.feasibility === 'plan_major' ? 'active' : ''}" data-feasibility="plan_major">Plan major <b>${counts.plan_major}</b></button>
+            <button type="button" class="status-pill ${state.filters.feasibility === 'ok' ? 'active' : ''}" data-feasibility="ok">OK <b>${counts.ok}</b></button>
+            <button type="button" class="status-pill ${state.filters.feasibility === 'all' ? 'active' : ''}" data-feasibility="all">All</button>
+          </div>`
+        : ''
+    }
+    <div class="filters">
+      <div class="seg" role="group" aria-label="Scope">
+        <button type="button" class="seg-btn ${state.filters.scope === 'all' ? 'active' : ''}" data-scope="all">All scopes</button>
+        <button type="button" class="seg-btn ${state.filters.scope === 'production' ? 'active' : ''}" data-scope="production">Production</button>
+      </div>
+      <div class="seg" role="group" aria-label="Origin">
+        <button type="button" class="seg-btn ${state.filters.origin === 'all' ? 'active' : ''}" data-origin="all">All deps</button>
+        <button type="button" class="seg-btn ${state.filters.origin === 'direct' ? 'active' : ''}" data-origin="direct">Direct</button>
+        <button type="button" class="seg-btn ${state.filters.origin === 'transitive' ? 'active' : ''}" data-origin="transitive">Transitive</button>
+      </div>
+      <button type="button" class="seg-btn ignore-toggle ${state.filters.showIgnored ? 'active' : ''}" id="toggle-ignored">
+        Ignored${ignoredCount ? ` (${ignoredCount})` : ''}
+      </button>
+      <input id="query" class="search" type="search" placeholder="Search package…" value="${escapeAttr(state.filters.query)}" />
+      <span class="count">${findings.length}</span>
+    </div>
+    <section class="list" aria-label="Packages">
+      ${
+        findings.length === 0
+          ? `<div class="state-panel state-empty compact">
+              <p class="state-message">Nothing matches these filters.</p>
+              <p class="state-hint">Try “All”, clear search, or include ignored items.</p>
+            </div>`
+          : findings.map((f) => rowHtml(f)).join('')
+      }
+    </section>`
+}
+
 function render(): void {
   const report = state.report
   const findings = filteredFindings()
@@ -379,18 +546,28 @@ function render(): void {
             </button>
             <button type="button" class="btn primary" id="scan-btn" ${
               state.loading || !project ? 'disabled' : ''
-            }>
+            } title="${
+              project?.healthOk === false
+                ? escapeAttr(
+                    `${project.healthMessage ?? 'Project has an issue'} — scan to re-check after you fix it.`,
+                  )
+                : 'Scan this project'
+            }">
               ${state.loading ? 'Scanning…' : project ? `Scan ${escapeHtml(project.name)}` : 'Scan'}
             </button>
           </div>
           ${
-            report
+            report && !summary?.error
               ? `<p class="meta">${formatWhen(report.scannedAt)}${
                   summary ? ` · ${Math.round(report.durationMs / 100) / 10}s` : ''
                 }</p>`
-              : project
-                ? `<p class="meta">Not scanned yet</p>`
-                : ''
+              : project && project.healthOk === false
+                ? `<p class="meta warn-meta">Not ready to scan</p>`
+                : project && !report
+                  ? `<p class="meta">Not scanned yet</p>`
+                  : summary?.error
+                    ? `<p class="meta warn-meta">Scan blocked</p>`
+                    : ''
           }
         </div>
       </header>
@@ -409,8 +586,9 @@ function render(): void {
             : state.projects
                 .map((p) => {
                   const active = p.id === state.activeProjectId
+                  const unhealthy = p.healthOk === false
                   return `
-                  <div class="project-tab ${active ? 'active' : ''}">
+                  <div class="project-tab ${active ? 'active' : ''} ${unhealthy ? 'unhealthy' : ''}">
                     <button type="button" class="project-tab-main" data-project="${escapeAttr(p.id)}">
                       <span class="project-tab-name">
                         ${escapeHtml(p.name)}
@@ -419,6 +597,12 @@ function render(): void {
                             ? `<span class="framework-pill" data-framework="${escapeAttr(p.frameworkId ?? '')}">${escapeHtml(p.framework)}</span>`
                             : ''
                         }
+                        ${
+                          p.packageManagerLabel
+                            ? `<span class="framework-pill pm-pill">${escapeHtml(p.packageManagerLabel)}</span>`
+                            : ''
+                        }
+                        ${unhealthy ? `<span class="framework-pill warn-pill">Issue</span>` : ''}
                       </span>
                       <span class="project-tab-path">${escapeHtml(shortPath(p.path))}</span>
                     </button>
@@ -429,64 +613,7 @@ function render(): void {
         }
       </section>
 
-      ${
-        !project
-          ? `<section class="empty"><p>Add a project folder with a package.json to start scanning.</p></section>`
-          : !report
-            ? `<section class="empty">
-                <p>Ready to scan <strong>${escapeHtml(project.name)}</strong>${
-                  project.framework && project.framework !== 'Unknown'
-                    ? ` <span class="framework-pill" data-framework="${escapeAttr(project.frameworkId ?? '')}">${escapeHtml(project.framework)}</span>`
-                    : ''
-                }.</p>
-                <p class="meta path-hint"><code>${escapeHtml(project.path)}</code></p>
-              </section>`
-            : `
-          ${
-            summary?.error
-              ? `<div class="banner error">${escapeHtml(summary.error)}</div>`
-              : ''
-          }
-          ${migrationGuideBannerHtml(summary?.migrationGuide)}
-
-          ${
-            counts
-              ? `<div class="status-row" role="group" aria-label="Status">
-                  <button type="button" class="status-pill ${state.filters.feasibility === 'actionable' ? 'active' : ''}" data-feasibility="actionable">Needs attention</button>
-                  <button type="button" class="status-pill ${state.filters.feasibility === 'vuln_no_fix' ? 'active' : ''}" data-feasibility="vuln_no_fix">No fix yet <b>${counts.vuln_no_fix}</b></button>
-                  <button type="button" class="status-pill ${state.filters.feasibility === 'update_now' ? 'active' : ''}" data-feasibility="update_now">Update now <b>${counts.update_now}</b></button>
-                  <button type="button" class="status-pill ${state.filters.feasibility === 'plan_major' ? 'active' : ''}" data-feasibility="plan_major">Plan major <b>${counts.plan_major}</b></button>
-                  <button type="button" class="status-pill ${state.filters.feasibility === 'ok' ? 'active' : ''}" data-feasibility="ok">OK <b>${counts.ok}</b></button>
-                  <button type="button" class="status-pill ${state.filters.feasibility === 'all' ? 'active' : ''}" data-feasibility="all">All</button>
-                </div>`
-              : ''
-          }
-
-          <div class="filters">
-            <div class="seg" role="group" aria-label="Scope">
-              <button type="button" class="seg-btn ${state.filters.scope === 'all' ? 'active' : ''}" data-scope="all">All scopes</button>
-              <button type="button" class="seg-btn ${state.filters.scope === 'production' ? 'active' : ''}" data-scope="production">Production</button>
-            </div>
-            <div class="seg" role="group" aria-label="Origin">
-              <button type="button" class="seg-btn ${state.filters.origin === 'all' ? 'active' : ''}" data-origin="all">All deps</button>
-              <button type="button" class="seg-btn ${state.filters.origin === 'direct' ? 'active' : ''}" data-origin="direct">Direct</button>
-              <button type="button" class="seg-btn ${state.filters.origin === 'transitive' ? 'active' : ''}" data-origin="transitive">Transitive</button>
-            </div>
-            <button type="button" class="seg-btn ignore-toggle ${state.filters.showIgnored ? 'active' : ''}" id="toggle-ignored">
-              Ignored${ignoredCount ? ` (${ignoredCount})` : ''}
-            </button>
-            <input id="query" class="search" type="search" placeholder="Search package…" value="${escapeAttr(state.filters.query)}" />
-            <span class="count">${findings.length}</span>
-          </div>
-
-          <section class="list" aria-label="Packages">
-            ${
-              findings.length === 0
-                ? `<p class="empty-row">Nothing matches for this project.</p>`
-                : findings.map((f) => rowHtml(f)).join('')
-            }
-          </section>`
-      }
+      ${mainPanelHtml(project, report, summary, findings, counts, ignoredCount)}
     </div>
 
     ${detail ? detailHtml(detail) : ''}
@@ -994,6 +1121,17 @@ async function loadGitStatus(
   }
 }
 
+async function refreshProjectList(): Promise<void> {
+  try {
+    const res = await fetch('/api/config')
+    if (!res.ok) return
+    const body = (await res.json()) as { projects: ProjectInfo[] }
+    state.projects = body.projects
+  } catch {
+    // keep existing list
+  }
+}
+
 async function selectProject(projectId: string): Promise<void> {
   if (state.activeProjectId === projectId) return
   state.activeProjectId = projectId
@@ -1002,6 +1140,7 @@ async function selectProject(projectId: string): Promise<void> {
   state.error = null
   state.filters.query = ''
   render()
+  await refreshProjectList()
   await loadReport(projectId)
 }
 
@@ -1355,6 +1494,7 @@ async function runScan(): Promise<void> {
   state.detail = null
   render()
   try {
+    await refreshProjectList()
     const res = await fetch('/api/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1363,6 +1503,7 @@ async function runScan(): Promise<void> {
     const body = (await res.json()) as ScanReport & { error?: string }
     if (!res.ok) throw new Error(body.error || `Scan failed (${res.status})`)
     state.report = body
+    await refreshProjectList()
   } catch (error) {
     state.error = error instanceof Error ? error.message : String(error)
   } finally {

@@ -45,7 +45,9 @@ export interface RootPath {
   immediateRange: string
 }
 
-export type FixRunner = 'npm' | 'ng'
+export type PackageManagerId = 'npm' | 'yarn' | 'pnpm' | 'bun'
+
+export type FixRunner = PackageManagerId | 'ng'
 
 export interface FixAction {
   id: string
@@ -112,9 +114,14 @@ export interface ProjectSummary {
   transitiveCount: number
   counts: Record<Feasibility, number>
   verifyLabel?: string | null
+  /** Detected package manager for this project (npm / yarn / pnpm / bun) */
+  packageManager?: PackageManagerId | null
   /** Present when latest framework major is ahead of the project's current major */
   migrationGuide?: MigrationGuide | null
   error?: string
+  /** Structured scan/load failure (missing lockfile, broken package.json, …) */
+  errorCode?: string | null
+  errorHint?: string | null
 }
 
 export interface ScanReport {

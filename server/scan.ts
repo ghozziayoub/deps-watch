@@ -7,12 +7,15 @@ import { groupAngularFindings } from './group.ts'
 import { applyIgnoresToFindings } from './ignores.ts'
 import { loadProjectManifest } from './loadProjects.ts'
 import { resolveMigrationGuide } from './migrationGuides.ts'
+import { detectPackageManager } from './packageManager.ts'
 import { getAppRoot } from './paths.ts'
 import { clearOsvCache, fetchAdvisoriesBatch } from './osv.ts'
 import { sortByPriority } from './priority.ts'
+import { ProjectLoadError } from './projectHealth.ts'
 import { getProjectConfig, ensureReportsDir } from './projectsStore.ts'
 import { clearRegistryCache, fetchRegistryInfo } from './registry.ts'
 import { detectVerifyCommand } from './verify.ts'
+import type { PackageManagerId } from './types.ts'
 import type {
   PackageFinding,
   ProjectSummary,
@@ -114,6 +117,7 @@ export async function runScan(projectId: string): Promise<ScanReport> {
   clearOsvCache()
 
   const findings: PackageFinding[] = []
+  let packageManager: PackageManagerId = detectPackageManager(project.path)
   let summary: ProjectSummary = {
     id: project.id,
     name: project.name,
@@ -122,7 +126,8 @@ export async function runScan(projectId: string): Promise<ScanReport> {
     directCount: 0,
     transitiveCount: 0,
     counts: emptyCounts(),
-    verifyLabel: detectVerifyCommand(project)?.label ?? null,
+    packageManager,
+    verifyLabel: detectVerifyCommand(project, packageManager)?.label ?? null,
   }
 
   type WorkItem = {
@@ -141,6 +146,12 @@ export async function runScan(projectId: string): Promise<ScanReport> {
   try {
     const manifest = loadProjectManifest(project.path)
     graph = manifest.graph
+    packageManager = manifest.packageManager
+    summary = {
+      ...summary,
+      packageManager,
+      verifyLabel: detectVerifyCommand(project, packageManager)?.label ?? null,
+    }
 
     for (const dep of manifest.declared) {
       work.push({
@@ -183,10 +194,31 @@ export async function runScan(projectId: string): Promise<ScanReport> {
       transitiveCount,
     }
   } catch (error) {
-    summary = {
-      ...summary,
-      error: error instanceof Error ? error.message : String(error),
+    if (error instanceof ProjectLoadError) {
+      summary = {
+        ...summary,
+        error: error.message,
+        errorCode: error.code,
+        errorHint: error.hint,
+      }
+    } else {
+      summary = {
+        ...summary,
+        error: error instanceof Error ? error.message : String(error),
+        errorCode: 'broken_package_json',
+        errorHint:
+          'Check that package.json and package-lock.json are valid, then scan again.',
+      }
     }
+
+    const failed: ScanReport = {
+      scannedAt: new Date().toISOString(),
+      durationMs: Date.now() - started,
+      projects: [summary],
+      findings: [],
+    }
+    saveProjectReport(projectId, failed)
+    return failed
   }
 
   const directNames = [...new Set(work.filter((w) => w.isDirect).map((w) => w.name))]
@@ -248,6 +280,8 @@ export async function runScan(projectId: string): Promise<ScanReport> {
         advisories,
         parents: parents.filter((p) => p.parentName !== '(project)'),
         rootPaths,
+        packageManager,
+        projectPath: project.path,
       }),
     )
   }

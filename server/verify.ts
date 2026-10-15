@@ -1,6 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import type { ProjectConfig, VerifyCommand } from './types.ts'
+import { detectPackageManager, pmRun } from './packageManager.ts'
+import type {
+  PackageManagerId,
+  ProjectConfig,
+  VerifyCommand,
+} from './types.ts'
 
 const PREFERRED_SCRIPTS = [
   'typecheck',
@@ -16,15 +21,12 @@ const PREFERRED_SCRIPTS = [
 
 export function detectVerifyCommand(
   project: ProjectConfig,
+  packageManager: PackageManagerId = detectPackageManager(project.path),
 ): VerifyCommand | null {
   if (project.verifyScript) {
     const script = project.verifyScript.trim()
     if (!script) return null
-    // Allow "typecheck" or "npm run typecheck" or full "ng build"
-    if (script.startsWith('npm ')) {
-      const parts = script.split(/\s+/).slice(1)
-      return { label: script, runner: 'npm', args: parts }
-    }
+
     if (script.startsWith('ng ')) {
       return {
         label: script,
@@ -32,10 +34,28 @@ export function detectVerifyCommand(
         args: script.split(/\s+/).slice(1),
       }
     }
+
+    // Full command already includes a runner
+    if (
+      script.startsWith('npm ') ||
+      script.startsWith('yarn ') ||
+      script.startsWith('pnpm ') ||
+      script.startsWith('bun ')
+    ) {
+      const parts = script.split(/\s+/)
+      const runner = parts[0] as Exclude<VerifyCommand['runner'], undefined>
+      return {
+        label: script,
+        runner,
+        args: parts.slice(1),
+      }
+    }
+
+    const cmd = pmRun(packageManager, script)
     return {
-      label: `npm run ${script}`,
-      runner: 'npm',
-      args: ['run', script],
+      label: cmd.command,
+      runner: cmd.runner,
+      args: cmd.args,
     }
   }
 
@@ -48,10 +68,11 @@ export function detectVerifyCommand(
 
   for (const name of PREFERRED_SCRIPTS) {
     if (scripts[name]) {
+      const cmd = pmRun(packageManager, name)
       return {
-        label: `npm run ${name}`,
-        runner: 'npm',
-        args: ['run', name],
+        label: cmd.command,
+        runner: cmd.runner,
+        args: cmd.args,
       }
     }
   }

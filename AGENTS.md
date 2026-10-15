@@ -12,7 +12,7 @@ Read this file before large changes. Humans: see also [README.md](./README.md), 
 2. **Per-project scanning** — do not bring back a combined “All projects” findings view.
 3. **Auto-update safety** — `Run here` must keep the clean-Git gate (`server/gitSafety.ts`).
 4. **Manual path always works** — copy folder + command even when auto-update is blocked.
-5. **Alpha scope** — prefer npm + `package-lock.json`; yarn/pnpm are Beta (see roadmap).
+5. **Package manager** — detect from lockfile / `packageManager` (default npm). Fix commands and **Run here** must use that manager (`server/packageManager.ts`).
 
 ---
 
@@ -47,6 +47,8 @@ UI (src/main.ts)
 - `server/projectsStore.ts` — add/remove projects, file picker
 - `server/angular.ts` / `group.ts` — Angular-specific (optional path)
 - `server/framework.ts` — detect stack from `package.json`
+- `server/packageManager.ts` — detect npm/yarn/pnpm/bun + build install/update/run commands
+- `server/lockfileYarn.ts` / `lockfilePnpm.ts` — lock graph loaders
 - `server/migrationGuides.ts` — official upgrade docs when latest major > current
 
 ---
@@ -84,7 +86,7 @@ Pick one, keep the PR tiny:
 1. Better empty/error UI when lockfile is missing
 2. Persist last-selected `projectId` in `localStorage`
 3. Document / improve verify-script auto-detection order
-4. Yarn or pnpm lockfile detection (spike only — full support is Beta)
+4. Deeper yarn/pnpm lock graph fidelity (peers / workspaces)
 5. Unit tests for `gitSafety` / semver classify with fixtures
 
 ---

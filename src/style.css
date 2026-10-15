@@ -203,6 +203,83 @@ h1 {
   color: var(--muted);
 }
 
+.state-panel {
+  margin-top: 0.35rem;
+  padding: 1.35rem 1.4rem;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.state-panel.compact {
+  padding: 1.1rem 1.2rem;
+  text-align: center;
+}
+
+.state-panel h2 {
+  margin: 0.2rem 0 0.55rem;
+  font-size: 1.35rem;
+  letter-spacing: -0.03em;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.state-message {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.45;
+}
+
+.state-hint {
+  margin: 0.55rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.state-error {
+  border-color: #efc4cb;
+  background: linear-gradient(180deg, #fff7f8 0%, var(--surface) 55%);
+}
+
+.state-error h2 {
+  color: var(--danger);
+}
+
+.state-ready {
+  border-color: #cfe3e2;
+  background: linear-gradient(180deg, #f3faf9 0%, var(--surface) 55%);
+}
+
+.state-empty {
+  background: linear-gradient(180deg, #f7f9fb 0%, var(--surface) 55%);
+}
+
+.state-cmd {
+  margin: 0.9rem 0 0;
+  padding: 0.65rem 0.8rem;
+  border-radius: 10px;
+  background: #1a2330;
+  color: #e8eef3;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+
+.warn-meta {
+  color: var(--warn);
+}
+
+.warn-pill {
+  background: var(--warn-bg) !important;
+  color: var(--warn) !important;
+}
+
+.project-tab.unhealthy {
+  border-color: #ead9a8;
+}
+
 .action-row {
   display: flex;
   flex-wrap: wrap;
@@ -301,6 +378,11 @@ h1 {
 .framework-pill[data-framework='node'] {
   background: #e6f3f2;
   color: #0d6e6e;
+}
+
+.pm-pill {
+  background: #eceff3 !important;
+  color: #3d4a57 !important;
 }
 
 .project-tab-path {
