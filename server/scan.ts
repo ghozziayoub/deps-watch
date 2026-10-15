@@ -2,9 +2,11 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import semver from 'semver'
 import { classifyPackage, emptyCounts } from './classify.ts'
+import { detectFramework } from './framework.ts'
 import { groupAngularFindings } from './group.ts'
 import { applyIgnoresToFindings } from './ignores.ts'
 import { loadProjectManifest } from './loadProjects.ts'
+import { resolveMigrationGuide } from './migrationGuides.ts'
 import { getAppRoot } from './paths.ts'
 import { clearOsvCache, fetchAdvisoriesBatch } from './osv.ts'
 import { sortByPriority } from './priority.ts'
@@ -258,6 +260,9 @@ export async function runScan(projectId: string): Promise<ScanReport> {
   for (const f of sorted) {
     if (!f.ignored) summary.counts[f.feasibility] += 1
   }
+
+  const framework = detectFramework(project.path)
+  summary.migrationGuide = resolveMigrationGuide(framework, sorted)
 
   const report: ScanReport = {
     scannedAt: new Date().toISOString(),

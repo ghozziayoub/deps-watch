@@ -46,6 +46,8 @@ UI (src/main.ts)
 - `server/gitSafety.ts` — clean repo required for auto-update
 - `server/projectsStore.ts` — add/remove projects, file picker
 - `server/angular.ts` / `group.ts` — Angular-specific (optional path)
+- `server/framework.ts` — detect stack from `package.json`
+- `server/migrationGuides.ts` — official upgrade docs when latest major > current
 
 ---
 

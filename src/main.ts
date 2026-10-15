@@ -3,6 +3,7 @@ import type {
   Feasibility,
   FixAction,
   FixJob,
+  MigrationGuide,
   PackageFinding,
   ScanReport,
   Severity,
@@ -316,6 +317,43 @@ function shortPath(p: string): string {
   return `…/${parts.slice(-3).join('/')}`
 }
 
+function activeMigrationGuide(): MigrationGuide | null {
+  return (
+    state.report?.projects.find((p) => p.id === state.activeProjectId)
+      ?.migrationGuide ?? null
+  )
+}
+
+function migrationGuideBannerHtml(guide: MigrationGuide | null | undefined): string {
+  if (!guide) return ''
+  return `
+    <div class="banner guide" role="note">
+      <div class="guide-copy">
+        <strong>${escapeHtml(guide.frameworkLabel)} ${guide.fromMajor} → ${guide.toMajor}</strong>
+        <span>Official guide for this major upgrade.</span>
+      </div>
+      <a class="btn ghost btn-sm" href="${escapeAttr(guide.url)}" target="_blank" rel="noreferrer">${escapeHtml(guide.title)} ↗</a>
+    </div>`
+}
+
+/** Show guide in the drawer for the framework marker finding only. */
+function drawerMigrationGuideHtml(finding: PackageFinding): string {
+  const guide = activeMigrationGuide()
+  if (!guide) return ''
+  const show =
+    finding.name === guide.markerPackage ||
+    (guide.frameworkId === 'angular' &&
+      (finding.name === '@angular/framework' ||
+        finding.name === '@angular/core'))
+  if (!show) return ''
+  return `
+    <div class="guide-inline">
+      <p class="section-kicker">Major upgrade</p>
+      <p class="hint">v${guide.fromMajor} → v${guide.toMajor}. Follow the official guide before running large updates.</p>
+      <a class="guide-link" href="${escapeAttr(guide.url)}" target="_blank" rel="noreferrer">${escapeHtml(guide.title)} ↗</a>
+    </div>`
+}
+
 function render(): void {
   const report = state.report
   const findings = filteredFindings()
@@ -409,6 +447,7 @@ function render(): void {
               ? `<div class="banner error">${escapeHtml(summary.error)}</div>`
               : ''
           }
+          ${migrationGuideBannerHtml(summary?.migrationGuide)}
 
           ${
             counts
@@ -646,6 +685,7 @@ function detailHtml(finding: PackageFinding): string {
                   .join('')}</div>`
               : ''
           }
+          ${drawerMigrationGuideHtml(finding)}
         </section>
 
         <section class="drawer-section">

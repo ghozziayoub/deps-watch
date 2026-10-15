@@ -93,6 +93,16 @@ export interface PackageFinding {
   groupMembers?: GroupMember[]
 }
 
+export interface MigrationGuide {
+  frameworkId: string
+  frameworkLabel: string
+  title: string
+  url: string
+  fromMajor: number
+  toMajor: number
+  markerPackage: string
+}
+
 export interface ProjectSummary {
   id: string
   name: string
@@ -102,6 +112,8 @@ export interface ProjectSummary {
   transitiveCount: number
   counts: Record<Feasibility, number>
   verifyLabel?: string | null
+  /** Present when latest framework major is ahead of the project's current major */
+  migrationGuide?: MigrationGuide | null
   error?: string
 }
 

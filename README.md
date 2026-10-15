@@ -77,11 +77,30 @@ npm run preview
 | **Scan** | Registry outdated checks + [OSV](https://osv.dev) advisories |
 | **Graph** | Direct + transitive deps; production vs all scopes |
 | **Priority** | Severity, feasibility (`update now` / `plan major` / `no fix yet`), ignore & snooze |
+| **Framework detect** | Best-effort stack label from `package.json` (Angular, React, Next, Vue, Nest, …) |
+| **Upgrade guides** | Official migration / update docs when the framework’s **latest major** is ahead of the project (see below) |
 | **Angular** | Framework grouping and `ng update` suggestions |
 | **Fix** | Copy command, or **Run here** with live progress |
 | **Verify** | Optional post-fix script (`verifyScript` or auto-detected `typecheck` / `test` / `build` …) |
 | **Safety** | Auto-update blocked unless Git exists and `git status` is clean |
 | **Privacy** | No cloud account; reports under `data/reports/` |
+
+### JS / TS framework upgrade guides
+
+After a scan, if Deps Watch detects a framework and the **newest major on npm is greater than the major in use**, it shows a short banner (and a drawer link on the marker package) pointing at the official upgrade docs — not on every project, only when a major jump is relevant.
+
+| Detected stack | Guide |
+| --- | --- |
+| **Angular** | [Angular Update Guide](https://angular.dev/update-guide) (linked with from → to majors) |
+| **Next.js** | [Upgrading](https://nextjs.org/docs/app/building-your-application/upgrading) |
+| **Nuxt** | [Upgrade](https://nuxt.com/docs/getting-started/upgrade) |
+| **NestJS** | [Migration guide](https://docs.nestjs.com/migration-guide) |
+| **Vue** | [Vue 3 migration](https://v3-migration.vuejs.org/) |
+| **SvelteKit** | [Migrating](https://svelte.dev/docs/kit/migrating) |
+| **Remix** | [Changelog](https://remix.run/docs/en/main/start/changelog) |
+| **Astro** | [Upgrade guides](https://docs.astro.build/en/guides/upgrade-to/v5/) |
+
+Stacks without a clear single official guide (e.g. plain React, Vite, Express, Fastify, Koa) do not get a banner.
 
 ### Config: `projects.config.json`
 

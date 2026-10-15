@@ -24,6 +24,8 @@ Local, no-SaaS multi-project dependency dashboard for Node/JS/TS apps that ship 
 - [x] OSV advisories + npm registry outdated detection
 - [x] Direct + transitive findings, production filter, ignore / snooze
 - [x] Priority sorting, severity, Angular grouping + `ng update` actions
+- [x] Framework detection from `package.json` + UI pills
+- [x] Official JS/TS upgrade / migration guides when latest major > current (Angular Update Guide, Next, Nuxt, Nest, Vue, …)
 - [x] In-app fix runner with progress log
 - [x] Optional verify-after-fix (`verifyScript` or auto-detected scripts)
 - [x] Clean-git gate for **Run here** (repo required, working tree clean)
